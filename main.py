@@ -669,8 +669,8 @@ q2,X -> X,R,q0
             messagebox.showwarning("Not Loaded", "Please load a machine first.")
             return
 
-        self._set_run_mode(True)
         self._running = True
+        self._set_run_mode(True)
         self._run_thread = threading.Thread(target=self._run_loop, daemon=True)
         self._run_thread.start()
 
