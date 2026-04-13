@@ -964,10 +964,10 @@ q2,X -> X,R,q0
         states  = sorted(tm.states)
         symbols = sorted({sym for (_st, sym) in tm.transitions})
 
-        STATE_W  = max((len(s) for s in states), default=5) + 2
-        SYM_W    = max((len(sym) for sym in symbols), default=3) + 2
+        STATE_W  = max([len(s) for s in states] or [5]) + 2
+        SYM_W    = max([len(sym) for sym in symbols] or [3]) + 2
         CELL_W   = max(
-            max((len(f"{w},{d},{ns}") for (_w, d, ns) in tm.transitions.values()), default=7),
+            max([len(f"{w},{d},{ns}") for (_w, d, ns) in tm.transitions.values()] or [7]),
             SYM_W,
         ) + 2
 
