@@ -160,6 +160,30 @@ class Simulator:
         self.halted: bool = False
         self.accepted: bool = False
         self.last_written_pos: int | None = None   # For highlighting changed cell
+        self._history: list[tuple] = []            # Undo stack (snapshots before each step)
+
+    def _snapshot(self) -> tuple:
+        """Capture a complete, independent copy of the current machine state."""
+        return (
+            dict(self.tape.cells),
+            self.tape.head,
+            self.current_state,
+            self.steps,
+            self.last_written_pos,
+            self.halted,
+            self.accepted,
+        )
+
+    def _restore(self, snapshot: tuple):
+        """Restore machine state from a snapshot produced by _snapshot()."""
+        cells, head, state, steps, lwp, halted, accepted = snapshot
+        self.tape.cells = cells
+        self.tape.head = head
+        self.current_state = state
+        self.steps = steps
+        self.last_written_pos = lwp
+        self.halted = halted
+        self.accepted = accepted
 
     def load(self, input_string: str):
         """Load a new input string and reset to start state."""
@@ -169,6 +193,14 @@ class Simulator:
         self.halted = False
         self.accepted = False
         self.last_written_pos = None
+        self._history = []
+
+    def undo(self) -> bool:
+        """Undo the last step. Returns True if a snapshot was available."""
+        if not self._history:
+            return False
+        self._restore(self._history.pop())
+        return True
 
     def step(self) -> str:
         """
@@ -199,6 +231,9 @@ class Simulator:
             return 'no_rule'
 
         new_symbol, direction, next_state = rule
+
+        # Push snapshot so this step can be undone
+        self._history.append(self._snapshot())
 
         # Execute the transition
         self.last_written_pos = self.tape.head
@@ -345,6 +380,7 @@ class App(tk.Tk):
         self._run_thread: threading.Thread | None = None
         self._running = False
         self._speed_ms = 400   # ms between steps during Run
+        self._table_win: tk.Toplevel | None = None   # Transition table window
 
         self._build_ui()
         self._load_example()   # Pre-fill with a working example
@@ -476,20 +512,34 @@ class App(tk.Tk):
         )
         self.txt_transitions.pack(fill='both', expand=True, padx=8, pady=8)
 
+        # Syntax-highlight colour tags
+        self.txt_transitions.tag_config('hl_comment',   foreground=C['muted'])
+        self.txt_transitions.tag_config('hl_state',     foreground=C['accent'])
+        self.txt_transitions.tag_config('hl_symbol',    foreground=C['yellow'])
+        self.txt_transitions.tag_config('hl_arrow',     foreground=C['muted'])
+        self.txt_transitions.tag_config('hl_direction', foreground=C['green'])
+        self.txt_transitions.tag_config('hl_error',     foreground=C['red'])
+
+        self.txt_transitions.bind('<KeyRelease>',   lambda _e: self._highlight_transitions())
+        self.txt_transitions.bind('<<Paste>>',      lambda _e: self.after(10, self._highlight_transitions))
+
         # ── Buttons ───────────────────────────────────────────────
         btn_frame = tk.Frame(left, bg=C['bg'])
         btn_frame.pack(fill='x', pady=(0, 4))
 
         self.btn_load  = self._make_btn(btn_frame, "⬆  LOAD",   C['btn'],      self._load_machine)
         self.btn_step  = self._make_btn(btn_frame, "▶  STEP",   C['btn_step'], self._step)
+        self.btn_undo  = self._make_btn(btn_frame, "◀  UNDO",   C['btn'],      self._undo)
         self.btn_run   = self._make_btn(btn_frame, "⏩  RUN",    C['btn_run'],  self._run)
         self.btn_stop  = self._make_btn(btn_frame, "⏹  STOP",   C['yellow'],   self._stop)
         self.btn_reset = self._make_btn(btn_frame, "↺  RESET",  C['btn_reset'],self._reset)
         self.btn_save  = self._make_btn(btn_frame, "💾  SAVE",   C['btn'],      self._save_config)
         self.btn_open  = self._make_btn(btn_frame, "📂  OPEN",   C['btn'],      self._load_config)
+        self.btn_table = self._make_btn(btn_frame, "🔍  TABLE",  C['btn'],      self._show_transition_table)
 
-        for btn in (self.btn_load, self.btn_step, self.btn_run,
-                    self.btn_stop, self.btn_reset, self.btn_save, self.btn_open):
+        for btn in (self.btn_load, self.btn_step, self.btn_undo, self.btn_run,
+                    self.btn_stop, self.btn_reset, self.btn_save, self.btn_open,
+                    self.btn_table):
             btn.pack(side='left', padx=4, pady=2)
 
         self.btn_stop.config(state='disabled')
@@ -583,6 +633,7 @@ q2,X -> X,R,q0
         self.entry_reject.insert(0, example_reject)
         self.entry_input .insert(0, example_input)
         self.txt_transitions.insert('1.0', example_transitions)
+        self._highlight_transitions()
 
     # ── Event handlers ────────────────────────────────────────────
 
@@ -640,6 +691,9 @@ q2,X -> X,R,q0
         self._log(f"Transitions: {len(self.tm.transitions)}", 'info')
         self.result_banner.config(text="", bg=C['bg'])
         self._refresh_ui()
+        # Auto-refresh the transition table if the window is already open
+        if self._table_win and self._table_win.winfo_exists():
+            self._show_transition_table()
 
     def _step(self):
         if self._running:
@@ -704,10 +758,11 @@ q2,X -> X,R,q0
         """Enable/disable buttons appropriately during auto-run."""
         idle_state  = 'normal' if not running else 'disabled'
         stop_state  = 'normal' if running     else 'disabled'
-        for btn in (self.btn_load, self.btn_step, self.btn_run,
+        for btn in (self.btn_load, self.btn_step, self.btn_undo, self.btn_run,
                     self.btn_reset, self.btn_save, self.btn_open):
             btn.config(state=idle_state)
         self.btn_stop.config(state=stop_state)
+        # TABLE stays always enabled (read-only viewer)
 
     # ── UI update helpers ─────────────────────────────────────────
 
@@ -839,7 +894,159 @@ q2,X -> X,R,q0
 
         self.txt_transitions.delete('1.0', 'end')
         self.txt_transitions.insert('1.0', config.get('transitions', ''))
+        self._highlight_transitions()
         self._log(f"Config loaded from {path}", 'info')
+
+    # ── Step-back (Undo) ──────────────────────────────────────────
+
+    def _undo(self):
+        """Undo the last step and refresh the UI."""
+        if self._running:
+            messagebox.showwarning("Running", "Stop auto-run before undoing.")
+            return
+        if not self.tm.start_state:
+            messagebox.showwarning("Not Loaded", "Please load a machine first.")
+            return
+        if not self.sim.undo():
+            messagebox.showinfo("Undo", "Nothing to undo — already at the start.")
+            return
+        # Clear any halted result banner since we've gone back
+        self.result_banner.config(text="", bg=C['bg'])
+        self._refresh_ui()
+        steps = self.sim.steps
+        self._log(f"[{steps:>5}] ↩ UNDO — back to step {steps}", 'info')
+
+    # ── Transition table viewer ───────────────────────────────────
+
+    def _show_transition_table(self):
+        """Open (or refresh) a Toplevel window showing the δ transition table."""
+        if not self.tm.transitions:
+            messagebox.showinfo("Table", "No transitions loaded. Press LOAD first.")
+            return
+
+        # Re-use existing window if still open
+        if self._table_win and self._table_win.winfo_exists():
+            self._table_win.lift()
+        else:
+            self._table_win = tk.Toplevel(self)
+            self._table_win.title("Transition Table  δ(state, symbol)")
+            self._table_win.configure(bg=C['bg'])
+            self._table_win.resizable(True, True)
+            # Build a Text widget inside the window
+            self._table_text = tk.Text(
+                self._table_win, bg=C['panel'], fg=C['text'],
+                font=('Courier New', 10), relief='flat',
+                wrap='none', state='disabled',
+                highlightthickness=0
+            )
+            sb_x = tk.Scrollbar(self._table_win, orient='horizontal',
+                                 command=self._table_text.xview)
+            sb_y = tk.Scrollbar(self._table_win, orient='vertical',
+                                 command=self._table_text.yview)
+            self._table_text.configure(xscrollcommand=sb_x.set,
+                                       yscrollcommand=sb_y.set)
+            sb_y.pack(side='right', fill='y')
+            sb_x.pack(side='bottom', fill='x')
+            self._table_text.pack(fill='both', expand=True, padx=4, pady=4)
+
+            # Configure colour tags for the table
+            self._table_text.tag_config('hdr',    foreground=C['accent'], font=('Courier New', 10, 'bold'))
+            self._table_text.tag_config('state',  foreground=C['accent'])
+            self._table_text.tag_config('rule',   foreground=C['yellow'])
+            self._table_text.tag_config('empty',  foreground=C['muted'])
+            self._table_text.tag_config('sep',    foreground=C['border'])
+
+        self._render_transition_table()
+
+    def _render_transition_table(self):
+        """Write the formatted δ table into self._table_text."""
+        tm = self.tm
+        states  = sorted(tm.states)
+        symbols = sorted({sym for (_st, sym) in tm.transitions})
+
+        STATE_W  = max((len(s) for s in states), default=5) + 2
+        SYM_W    = max((len(sym) for sym in symbols), default=3) + 2
+        CELL_W   = max(
+            max((len(f"{w},{d},{ns}") for (_w, d, ns) in tm.transitions.values()), default=7),
+            SYM_W,
+        ) + 2
+
+        def pad(s, w):
+            return s.center(w)
+
+        sep_row = '─' * STATE_W + '┼' + ('─' * CELL_W + '┼') * len(symbols)
+
+        t = self._table_text
+        t.config(state='normal')
+        t.delete('1.0', 'end')
+
+        # Header row
+        header = pad('δ', STATE_W) + '│' + '│'.join(pad(sym, CELL_W) for sym in symbols)
+        t.insert('end', header + '\n', 'hdr')
+        t.insert('end', sep_row + '\n', 'sep')
+
+        for state in states:
+            row_start = t.index('end')
+            t.insert('end', pad(state, STATE_W), 'state')
+            t.insert('end', '│', 'sep')
+            for sym in symbols:
+                rule = tm.transitions.get((state, sym))
+                if rule:
+                    cell = pad(f"{rule[0]},{rule[1]},{rule[2]}", CELL_W)
+                    t.insert('end', cell, 'rule')
+                else:
+                    t.insert('end', pad('—', CELL_W), 'empty')
+                t.insert('end', '│', 'sep')
+            t.insert('end', '\n')
+            t.insert('end', sep_row + '\n', 'sep')
+
+        t.config(state='disabled')
+
+    # ── Syntax highlighting ───────────────────────────────────────
+
+    _TRANSITION_RE = re.compile(
+        r'^(\s*)(\S+)(\s*,\s*)(\S+)(\s*->\s*)(\S+)(\s*,\s*)([LRSlrs])(\s*,\s*)(\S+)(\s*)$'
+    )
+
+    def _highlight_transitions(self):
+        """Re-apply syntax highlighting to the entire transition editor."""
+        t = self.txt_transitions
+        # Remove all highlight tags
+        for tag in ('hl_comment', 'hl_state', 'hl_symbol',
+                    'hl_arrow', 'hl_direction', 'hl_error'):
+            t.tag_remove(tag, '1.0', 'end')
+
+        content = t.get('1.0', 'end')
+        for lineno, raw in enumerate(content.splitlines(), 1):
+            line_start = f'{lineno}.0'
+            line_end   = f'{lineno}.end'
+            stripped   = raw.strip()
+
+            if not stripped:
+                continue
+
+            if stripped.startswith('#'):
+                t.tag_add('hl_comment', line_start, line_end)
+                continue
+
+            m = self._TRANSITION_RE.match(raw)
+            if not m:
+                t.tag_add('hl_error', line_start, line_end)
+                continue
+
+            # m.groups(): lead_ws, state, comma1, sym, arrow, new_sym, comma2, dir, comma3, next_state, trail
+            col = 0
+            for i, chunk in enumerate(m.groups()):
+                start = f'{lineno}.{col}'
+                end   = f'{lineno}.{col + len(chunk)}'
+                # Groups (0-indexed): 0=ws, 1=state, 2=,, 3=sym, 4=->, 5=new_sym, 6=,, 7=dir, 8=,, 9=next, 10=ws
+                if   i == 1:  t.tag_add('hl_state',     start, end)
+                elif i == 3:  t.tag_add('hl_symbol',    start, end)
+                elif i == 4:  t.tag_add('hl_arrow',     start, end)
+                elif i == 5:  t.tag_add('hl_symbol',    start, end)
+                elif i == 7:  t.tag_add('hl_direction', start, end)
+                elif i == 9:  t.tag_add('hl_state',     start, end)
+                col += len(chunk)
 
     def _log_clear(self):
         self.log_box.config(state='normal')
