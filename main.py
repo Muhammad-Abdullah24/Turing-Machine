@@ -1,5 +1,6 @@
 import json
 import tkinter as tk
+import tkinter.ttk as ttk
 from tkinter import filedialog, messagebox, scrolledtext
 import time
 import threading
@@ -273,96 +274,147 @@ class Simulator:
 #  FRONTEND: Tkinter GUI
 # ─────────────────────────────────────────────────────────────────
 
-# Colour palette — dark terminal aesthetic
+# ── Colour palette — deep midnight / indigo ───────────────────────
 C = {
-    'bg':          '#0d1117',
-    'panel':       '#161b22',
-    'border':      '#30363d',
-    'text':        '#e6edf3',
-    'muted':       '#8b949e',
-    'accent':      '#58a6ff',
-    'green':       '#3fb950',
-    'red':         '#f85149',
-    'yellow':      '#d29922',
-    'tape_cell':   '#21262d',
-    'tape_head':   '#388bfd',
-    'tape_changed':'#d29922',
-    'tape_text':   '#e6edf3',
-    'btn':         '#21262d',
-    'btn_hover':   '#30363d',
-    'btn_run':     '#238636',
-    'btn_step':    '#1f6feb',
-    'btn_reset':   '#6e7681',
+    'bg':           '#080d1c',
+    'panel':        '#0e1525',
+    'panel2':       '#141e35',
+    'border':       '#1e2e48',
+    'border_hi':    '#3a5275',
+    'text':         '#cdd7ee',
+    'muted':        '#3e5474',
+    'accent':       '#7b86f7',
+    'accent_glow':  '#252d80',
+    'accent2':      '#30cdcd',
+    'green':        '#2bd496',
+    'red':          '#f06060',
+    'yellow':       '#f5c340',
+    'tape_cell':    '#0c1628',
+    'tape_head':    '#7b86f7',
+    'tape_changed': '#f5c340',
+    'tape_text':    '#cdd7ee',
+    'btn':          '#16253c',
+    'btn_hover':    '#1e324e',
+    'btn_run':      '#0c4228',
+    'btn_step':     '#0c2860',
+    'btn_reset':    '#202035',
+    'btn_stop':     '#501818',
 }
 
-FONT_MONO  = ('Courier New', 11)
-FONT_MONO_BIG = ('Courier New', 14, 'bold')
-FONT_TITLE = ('Courier New', 18, 'bold')
-FONT_LABEL = ('Courier New', 10)
-FONT_BTN   = ('Courier New', 11, 'bold')
+FONT_MONO     = ('Consolas', 10)
+FONT_MONO_BIG = ('Consolas', 14, 'bold')
+FONT_TITLE    = ('Segoe UI', 15, 'bold')
+FONT_SUB      = ('Segoe UI', 9)
+FONT_LABEL    = ('Segoe UI', 9)
+FONT_BTN      = ('Segoe UI', 9, 'bold')
+FONT_HUD_VAL  = ('Segoe UI', 15, 'bold')
+FONT_HUD_LBL  = ('Segoe UI', 7)
 
-TAPE_CELLS     = 21   # visible tape cells (odd number keeps head centred)
-CELL_W         = 44
-CELL_H         = 54
+TAPE_CELLS = 17          # visible cells (odd → head is centred)
+CELL_W     = 46
+CELL_H     = 60
+CELL_R     = 10          # corner radius
+
+
+def _rr(canvas, x1, y1, x2, y2, r=8, **kw):
+    """Draw a smooth rounded rectangle on *canvas* via a 12-point polygon."""
+    fill    = kw.get('fill',    '')
+    outline = kw.get('outline', fill)
+    ow      = kw.get('width',   0)
+    pts = [
+        x1+r, y1,    x2-r, y1,
+        x2,   y1,    x2,   y1+r,
+        x2,   y2-r,  x2,   y2,
+        x2-r, y2,    x1+r, y2,
+        x1,   y2,    x1,   y2-r,
+        x1,   y1+r,  x1,   y1,
+    ]
+    return canvas.create_polygon(pts, smooth=True,
+                                 fill=fill, outline=outline, width=ow)
+
+
+def _lighten(hex_color: str, factor: float = 0.18) -> str:
+    """Return a brighter version of *hex_color* for hover states."""
+    r = int(hex_color[1:3], 16)
+    g = int(hex_color[3:5], 16)
+    b = int(hex_color[5:7], 16)
+    r = min(255, int(r + (255 - r) * factor))
+    g = min(255, int(g + (255 - g) * factor))
+    b = min(255, int(b + (255 - b) * factor))
+    return f'#{r:02x}{g:02x}{b:02x}'
 
 
 class TapeCanvas(tk.Canvas):
-    """Custom canvas that draws the tape cells."""
+    """Draws the Turing tape: rounded cells, glow halo on the head, head always centred."""
 
     def __init__(self, parent, **kw):
         super().__init__(parent, bg=C['bg'], highlightthickness=0,
-                         height=CELL_H + 40, **kw)
-        self.cell_data: list[tuple[int, str]] = []
-        self.head_pos: int = 0
+                         height=CELL_H + 52, **kw)
+        self.cell_data:   list[tuple[int, str]] = []
+        self.head_pos:    int = 0
         self.changed_pos: int | None = None
 
     def render(self, cell_data: list[tuple[int, str]],
                head_pos: int, changed_pos: int | None = None):
-        self.cell_data = cell_data
-        self.head_pos = head_pos
+        self.cell_data   = cell_data
+        self.head_pos    = head_pos
         self.changed_pos = changed_pos
         self.after_idle(self._draw)
 
     def _draw(self):
         self.delete('all')
-        w = self.winfo_width()
-        n = len(self.cell_data)
-        total_w = n * CELL_W
-        x0 = (w - total_w) // 2          # Centre the tape in canvas
-        y0 = 22                           # top of cells
+        w  = self.winfo_width() or 1
+        n  = len(self.cell_data)
+        y0 = 32   # top of cell row
+
+        # Always keep the head cell centred in the canvas
+        x0 = w // 2 - (n // 2) * CELL_W - CELL_W // 2
 
         for idx, (pos, sym) in enumerate(self.cell_data):
-            x = x0 + idx * CELL_W
-            is_head = (pos == self.head_pos)
-            is_changed = (pos == self.changed_pos)
+            x          = x0 + idx * CELL_W
+            cx         = x + CELL_W // 2
+            is_head    = (pos == self.head_pos)
+            is_changed = (pos == self.changed_pos) and not is_head
 
-            # Cell fill
             if is_head:
-                fill = C['tape_head']
+                # Glow halo behind the cell
+                _rr(self, x - 5, y0 - 5, x + CELL_W + 3, y0 + CELL_H + 5,
+                    r=CELL_R + 5, fill=C['accent_glow'], outline='', width=0)
+                fill      = C['tape_head']
+                sym_color = '#ffffff'
+                outline   = '#9ca8ff'
+                ow        = 2
             elif is_changed:
-                fill = C['tape_changed']
+                fill      = '#382b00'
+                sym_color = C['yellow']
+                outline   = C['yellow']
+                ow        = 1
             else:
-                fill = C['tape_cell']
+                fill      = C['tape_cell']
+                sym_color = C['tape_text']
+                outline   = C['border']
+                ow        = 1
 
-            # Draw cell rectangle
-            self.create_rectangle(x, y0, x + CELL_W - 2, y0 + CELL_H,
-                                  fill=fill, outline=C['border'], width=1)
+            _rr(self, x + 1, y0, x + CELL_W - 2, y0 + CELL_H,
+                r=CELL_R, fill=fill, outline=outline, width=ow)
+            self.create_text(cx, y0 + CELL_H // 2,
+                             text=sym, fill=sym_color, font=FONT_MONO_BIG)
 
-            # Symbol
-            txt_color = '#ffffff' if (is_head or is_changed) else C['tape_text']
-            self.create_text(x + CELL_W // 2, y0 + CELL_H // 2,
-                             text=sym, fill=txt_color,
-                             font=FONT_MONO_BIG)
+            # Position label below, only for cells near the head
+            if abs(pos - self.head_pos) <= 3:
+                self.create_text(cx, y0 + CELL_H + 14,
+                                 text=str(pos),
+                                 fill=C['accent'] if is_head else C['muted'],
+                                 font=('Segoe UI', 7))
 
-            # Position index (small, below cell)
-            self.create_text(x + CELL_W // 2, y0 + CELL_H + 10,
-                             text=str(pos), fill=C['muted'],
-                             font=('Courier New', 8))
-
-        # Head arrow above the centre cell
-        cx = x0 + (n // 2) * CELL_W + CELL_W // 2
-        self.create_text(cx, y0 - 10, text='▼',
-                         fill=C['tape_head'], font=('Courier New', 14, 'bold'))
+        # Downward-pointing triangle above the head
+        hx = w // 2
+        self.create_polygon(hx - 7, y0 - 12,
+                            hx + 7, y0 - 12,
+                            hx,     y0 - 3,
+                            fill=C['accent'], outline='')
+        self.create_text(hx, y0 - 22, text='READ HEAD',
+                         fill=C['muted'], font=('Segoe UI', 7))
 
 
 class App(tk.Tk):
@@ -373,167 +425,180 @@ class App(tk.Tk):
         self.title("Turing Machine Simulator")
         self.configure(bg=C['bg'])
         self.resizable(True, True)
-        self.minsize(900, 720)
+        self.minsize(940, 700)
 
         self.tm = TuringMachine()
         self.sim = Simulator(self.tm)
         self._run_thread: threading.Thread | None = None
-        self._running = False
-        self._speed_ms = 400   # ms between steps during Run
-        self._table_win: tk.Toplevel | None = None   # Transition table window
+        self._running    = False
+        self._speed_ms   = 400
+        self._table_win: tk.Toplevel | None = None
 
         self._build_ui()
-        self._load_example()   # Pre-fill with a working example
+        self._load_example()
 
     # ── UI construction ───────────────────────────────────────────
 
     def _build_menu(self):
-        """Create the top menu bar, housing File and View actions."""
         menubar = tk.Menu(self, bg=C['panel'], fg=C['text'],
                           activebackground=C['accent'], activeforeground='white',
                           relief='flat', bd=0)
 
-        file_menu = tk.Menu(menubar, tearoff=0,
-                            bg=C['panel'], fg=C['text'],
+        file_menu = tk.Menu(menubar, tearoff=0, bg=C['panel'], fg=C['text'],
                             activebackground=C['accent'], activeforeground='white')
-        file_menu.add_command(label="Open Configuration…", command=self._load_config)
-        file_menu.add_command(label="Save Configuration…", command=self._save_config)
+        file_menu.add_command(label='Open Configuration…', command=self._load_config)
+        file_menu.add_command(label='Save Configuration…', command=self._save_config)
         file_menu.add_separator()
-        file_menu.add_command(label="Exit", command=self.quit)
-        menubar.add_cascade(label="File", menu=file_menu)
+        file_menu.add_command(label='Exit', command=self.quit)
+        menubar.add_cascade(label='File', menu=file_menu)
 
-        view_menu = tk.Menu(menubar, tearoff=0,
-                            bg=C['panel'], fg=C['text'],
+        view_menu = tk.Menu(menubar, tearoff=0, bg=C['panel'], fg=C['text'],
                             activebackground=C['accent'], activeforeground='white')
-        view_menu.add_command(label="Transition Table", command=self._show_transition_table)
-        menubar.add_cascade(label="View", menu=view_menu)
+        view_menu.add_command(label='Transition Table', command=self._show_transition_table)
+        menubar.add_cascade(label='View', menu=view_menu)
 
         self.config(menu=menubar)
 
     def _build_ui(self):
+        # ── TTK theme overrides ───────────────────────────────────
+        style = ttk.Style(self)
+        style.theme_use('clam')
+        style.configure('Dark.TNotebook',
+                        background=C['panel2'], borderwidth=0, relief='flat')
+        style.configure('Dark.TNotebook.Tab',
+                        background=C['btn'], foreground=C['muted'],
+                        padding=[18, 7], font=FONT_LABEL, borderwidth=0)
+        style.map('Dark.TNotebook.Tab',
+                  background=[('selected', C['panel2']), ('active', C['btn_hover'])],
+                  foreground=[('selected', C['accent']),  ('active', C['text'])])
+        style.configure('Speed.TScale',
+                        background=C['bg'], troughcolor=C['panel2'])
+
         # ── Menu bar ──────────────────────────────────────────────
         self._build_menu()
 
-        # ── Title bar ────────────────────────────────────────────
-        title_frame = tk.Frame(self, bg=C['bg'], pady=10)
-        title_frame.pack(fill='x')
-        tk.Label(title_frame, text="◈  TURING MACHINE SIMULATOR",
-                 bg=C['bg'], fg=C['accent'],
-                 font=FONT_TITLE).pack()
-        tk.Label(title_frame, text="Deterministic · Single-Tape · Step-by-Step",
-                 bg=C['bg'], fg=C['muted'], font=FONT_LABEL).pack()
+        # ── Header ────────────────────────────────────────────────
+        hdr = tk.Frame(self, bg=C['bg'], padx=18, pady=10)
+        hdr.pack(fill='x')
+        tk.Label(hdr, text='◈  TURING MACHINE SIMULATOR',
+                 bg=C['bg'], fg=C['accent'], font=FONT_TITLE).pack(anchor='w')
+        tk.Label(hdr, text='Deterministic  ·  Single-Tape  ·  Step-by-Step',
+                 bg=C['bg'], fg=C['muted'], font=FONT_SUB).pack(anchor='w', pady=(2, 0))
 
-        # ── Separator ────────────────────────────────────────────
-        tk.Frame(self, bg=C['border'], height=1).pack(fill='x')
+        # Accent gradient separator (fades left-to-right)
+        sep = tk.Canvas(self, height=2, bg=C['bg'], highlightthickness=0)
+        sep.pack(fill='x')
 
-        # ── Main layout (left panel + right log) ─────────────────
-        main = tk.Frame(self, bg=C['bg'])
-        main.pack(fill='both', expand=True, padx=16, pady=10)
+        def _draw_sep(e=None):
+            sep.delete('all')
+            w = sep.winfo_width()
+            sep.create_rectangle(0, 0, w * 2 // 3, 2, fill=C['accent'], outline='')
+        sep.bind('<Configure>', _draw_sep)
+        self.after(60, _draw_sep)
 
-        left  = tk.Frame(main, bg=C['bg'])
+        # ── Content (left + right) ────────────────────────────────
+        content = tk.Frame(self, bg=C['bg'])
+        content.pack(fill='both', expand=True, padx=14, pady=10)
+
+        left  = tk.Frame(content, bg=C['bg'])
         left.pack(side='left', fill='both', expand=True)
 
-        right = tk.Frame(main, bg=C['panel'], bd=0,
+        right = tk.Frame(content, bg=C['panel'],
                          highlightbackground=C['border'], highlightthickness=1)
-        right.pack(side='right', fill='y', padx=(12, 0), ipadx=4)
+        right.pack(side='right', fill='y', padx=(12, 0))
 
-        # ── Tape display ─────────────────────────────────────────
-        tape_frame = tk.LabelFrame(left, text=" TAPE ", bg=C['bg'], fg=C['accent'],
-                                   font=FONT_LABEL, bd=1,
-                                   highlightbackground=C['border'])
-        tape_frame.pack(fill='x', pady=(0, 8))
+        # ── Tape card ─────────────────────────────────────────────
+        tape_card = tk.Frame(left, bg=C['panel'],
+                             highlightbackground=C['border'], highlightthickness=1)
+        tape_card.pack(fill='x', pady=(0, 10))
 
-        self.tape_canvas = TapeCanvas(tape_frame, width=TAPE_CELLS * CELL_W + 20)
-        self.tape_canvas.pack(fill='x', expand=True, padx=8, pady=8)
+        tape_hdr = tk.Frame(tape_card, bg=C['panel'])
+        tape_hdr.pack(fill='x', padx=12, pady=(8, 0))
+        tk.Label(tape_hdr, text='T A P E', bg=C['panel'],
+                 fg=C['muted'], font=('Segoe UI', 8, 'bold')).pack(side='left')
 
-        # ── Status bar ───────────────────────────────────────────
-        status_frame = tk.Frame(left, bg=C['panel'],
-                                highlightbackground=C['border'], highlightthickness=1)
-        status_frame.pack(fill='x', pady=(0, 8))
+        self.tape_canvas = TapeCanvas(tape_card, width=TAPE_CELLS * CELL_W + 20)
+        self.tape_canvas.pack(fill='x', expand=True, padx=10, pady=(2, 10))
 
-        for col in range(4):
-            status_frame.columnconfigure(col, weight=1)
+        # ── Status HUD — 4 coloured cards ─────────────────────────
+        hud = tk.Frame(left, bg=C['bg'])
+        hud.pack(fill='x', pady=(0, 10))
 
-        for col, label in enumerate(("STATE", "HEAD", "SYMBOL", "STEPS")):
-            tk.Label(status_frame, text=label, bg=C['panel'],
-                     fg=C['muted'], font=FONT_LABEL).grid(row=0, column=col, padx=8, pady=4)
-
-        self.lbl_state  = tk.Label(status_frame, text="—", bg=C['panel'],
-                                   fg=C['accent'], font=FONT_MONO_BIG)
-        self.lbl_head   = tk.Label(status_frame, text="0", bg=C['panel'],
-                                   fg=C['text'],   font=FONT_MONO_BIG)
-        self.lbl_symbol = tk.Label(status_frame, text="_", bg=C['panel'],
-                                   fg=C['text'],   font=FONT_MONO_BIG)
-        self.lbl_steps  = tk.Label(status_frame, text="0", bg=C['panel'],
-                                   fg=C['text'],   font=FONT_MONO_BIG)
-
-        self.lbl_state .grid(row=1, column=0, padx=8, pady=(0, 6))
-        self.lbl_head  .grid(row=1, column=1, padx=8, pady=(0, 6))
-        self.lbl_symbol.grid(row=1, column=2, padx=8, pady=(0, 6))
-        self.lbl_steps .grid(row=1, column=3, padx=8, pady=(0, 6))
+        for title, attr, color in (
+            ('STATE',  'lbl_state',  C['accent']),
+            ('HEAD',   'lbl_head',   C['accent2']),
+            ('SYMBOL', 'lbl_symbol', C['yellow']),
+            ('STEPS',  'lbl_steps',  C['green']),
+        ):
+            card = tk.Frame(hud, bg=C['panel2'],
+                            highlightbackground=C['border'], highlightthickness=1)
+            card.pack(side='left', fill='both', expand=True, padx=4)
+            tk.Frame(card, bg=color, height=3).pack(fill='x')
+            tk.Label(card, text=title, bg=C['panel2'],
+                     fg=C['muted'], font=FONT_HUD_LBL).pack(pady=(6, 0))
+            lbl = tk.Label(card, text='—', bg=C['panel2'],
+                           fg=color, font=FONT_HUD_VAL)
+            lbl.pack(pady=(2, 8))
+            setattr(self, attr, lbl)
 
         # ── Result banner ─────────────────────────────────────────
-        self.result_banner = tk.Label(left, text="", bg=C['bg'],
-                                      font=('Courier New', 15, 'bold'))
+        self.result_banner = tk.Label(left, text='', bg=C['bg'],
+                                      font=('Segoe UI', 13, 'bold'), pady=6)
         self.result_banner.pack(fill='x', pady=(0, 8))
 
-        # ── Configuration section ─────────────────────────────────
-        cfg_frame = tk.LabelFrame(left, text=" CONFIGURATION ",
-                                  bg=C['bg'], fg=C['accent'],
-                                  font=FONT_LABEL, bd=1,
-                                  highlightbackground=C['border'])
-        cfg_frame.pack(fill='x', pady=(0, 8))
+        # ── Config / Transitions — tabbed notebook ─────────────────
+        nb = ttk.Notebook(left, style='Dark.TNotebook')
+        nb.pack(fill='both', expand=True, pady=(0, 8))
 
-        # Row 0: States / Start / Accept / Reject
-        row0 = tk.Frame(cfg_frame, bg=C['bg'])
-        row0.pack(fill='x', padx=8, pady=4)
+        # ── Tab 1: Machine ────────────────────────────────────────
+        tab_m = tk.Frame(nb, bg=C['panel2'])
+        nb.add(tab_m, text='  Machine  ')
 
-        fields = [
-            ("States", 'entry_states', 20),
-            ("Start",  'entry_start',   8),
-            ("Accept", 'entry_accept',  8),
-            ("Reject", 'entry_reject',  8),
-        ]
-        for label, attr, w in fields:
-            col = tk.Frame(row0, bg=C['bg'])
-            col.pack(side='left', padx=4)
-            tk.Label(col, text=label, bg=C['bg'], fg=C['muted'],
-                     font=FONT_LABEL).pack(anchor='w')
-            e = tk.Entry(col, width=w, bg=C['panel'], fg=C['text'],
-                         insertbackground=C['text'], relief='flat',
-                         font=FONT_MONO,
-                         highlightbackground=C['border'], highlightthickness=1)
-            e.pack()
+        f_states = tk.Frame(tab_m, bg=C['panel2'])
+        f_states.pack(fill='x', padx=14, pady=(14, 6))
+        tk.Label(f_states, text='States  (comma-separated)',
+                 bg=C['panel2'], fg=C['muted'], font=FONT_LABEL).pack(anchor='w')
+        self.entry_states = self._make_entry(f_states, width=56)
+        self.entry_states.pack(fill='x', pady=(4, 0))
+
+        f_sar = tk.Frame(tab_m, bg=C['panel2'])
+        f_sar.pack(fill='x', padx=14, pady=(0, 6))
+        for lbl_txt, attr, w in (('Start',  'entry_start',  10),
+                                  ('Accept', 'entry_accept', 14),
+                                  ('Reject', 'entry_reject', 10)):
+            col = tk.Frame(f_sar, bg=C['panel2'])
+            col.pack(side='left', padx=(0, 18))
+            tk.Label(col, text=lbl_txt, bg=C['panel2'],
+                     fg=C['muted'], font=FONT_LABEL).pack(anchor='w')
+            e = self._make_entry(col, width=w)
+            e.pack(pady=(4, 0))
             setattr(self, attr, e)
 
-        # Row 1: Input string
-        row1 = tk.Frame(cfg_frame, bg=C['bg'])
-        row1.pack(fill='x', padx=8, pady=4)
-        tk.Label(row1, text="Input:", bg=C['bg'], fg=C['muted'],
-                 font=FONT_LABEL).pack(side='left', padx=4)
-        self.entry_input = tk.Entry(row1, width=34, bg=C['panel'],
-                                    fg=C['text'], insertbackground=C['text'],
-                                    relief='flat', font=FONT_MONO,
-                                    highlightbackground=C['border'], highlightthickness=1)
-        self.entry_input.pack(side='left', padx=4)
+        f_inp = tk.Frame(tab_m, bg=C['panel2'])
+        f_inp.pack(fill='x', padx=14, pady=(0, 16))
+        tk.Label(f_inp, text='Input string',
+                 bg=C['panel2'], fg=C['muted'], font=FONT_LABEL).pack(anchor='w')
+        self.entry_input = self._make_entry(f_inp, width=42)
+        self.entry_input.pack(fill='x', pady=(4, 0))
 
-        # ── Transition editor ─────────────────────────────────────
-        tr_frame = tk.LabelFrame(left, text=" TRANSITIONS  (state,sym → sym,Dir,state) ",
-                                 bg=C['bg'], fg=C['accent'],
-                                 font=FONT_LABEL, bd=1,
-                                 highlightbackground=C['border'])
-        tr_frame.pack(fill='both', expand=True, pady=(0, 8))
+        # ── Tab 2: Transitions ────────────────────────────────────
+        tab_t = tk.Frame(nb, bg=C['panel2'])
+        nb.add(tab_t, text='  Transitions  ')
+
+        tk.Label(tab_t,
+                 text='  state, sym  →  new_sym, Dir, next_state      (# comments)',
+                 bg=C['panel2'], fg=C['muted'],
+                 font=('Segoe UI', 8), anchor='w').pack(fill='x', padx=12, pady=(8, 4))
 
         self.txt_transitions = scrolledtext.ScrolledText(
-            tr_frame, width=55, height=8,
-            bg=C['panel'], fg=C['text'],
+            tab_t, bg=C['panel'], fg=C['text'],
             insertbackground=C['text'],
             relief='flat', font=FONT_MONO,
-            highlightbackground=C['border'], highlightthickness=1
+            highlightbackground=C['border_hi'], highlightthickness=1,
+            padx=10, pady=8,
         )
-        self.txt_transitions.pack(fill='both', expand=True, padx=8, pady=8)
+        self.txt_transitions.pack(fill='both', expand=True, padx=8, pady=(0, 8))
 
-        # Syntax-highlight colour tags
         self.txt_transitions.tag_config('hl_comment',   foreground=C['muted'])
         self.txt_transitions.tag_config('hl_state',     foreground=C['accent'])
         self.txt_transitions.tag_config('hl_symbol',    foreground=C['yellow'])
@@ -541,70 +606,93 @@ class App(tk.Tk):
         self.txt_transitions.tag_config('hl_direction', foreground=C['green'])
         self.txt_transitions.tag_config('hl_error',     foreground=C['red'])
 
-        self.txt_transitions.bind('<KeyRelease>',   lambda _e: self._highlight_transitions())
-        self.txt_transitions.bind('<<Paste>>',      lambda _e: self.after(10, self._highlight_transitions))
+        self.txt_transitions.bind('<KeyRelease>',
+                                  lambda _e: self._highlight_transitions())
+        self.txt_transitions.bind('<<Paste>>',
+                                  lambda _e: self.after(10, self._highlight_transitions))
 
-        # ── Buttons ───────────────────────────────────────────────
-        btn_frame = tk.Frame(left, bg=C['bg'])
-        btn_frame.pack(fill='x', pady=(0, 4))
+        # ── Controls ──────────────────────────────────────────────
+        ctrl = tk.Frame(left, bg=C['bg'])
+        ctrl.pack(fill='x', pady=(0, 4))
 
-        self.btn_load  = self._make_btn(btn_frame, "⬆  LOAD",  C['btn'],       self._load_machine)
-        self.btn_step  = self._make_btn(btn_frame, "▶  STEP",  C['btn_step'],  self._step)
-        self.btn_undo  = self._make_btn(btn_frame, "◀  UNDO",  C['btn'],       self._undo)
+        btn_row = tk.Frame(ctrl, bg=C['bg'])
+        btn_row.pack(fill='x', pady=(0, 6))
 
-        # Visual divider between configure/step group and run group
-        tk.Frame(btn_frame, bg=C['border'], width=1).pack(side='left', fill='y', padx=6, pady=4)
-
-        self.btn_run   = self._make_btn(btn_frame, "⏩  RUN",   C['btn_run'],   self._run)
-        self.btn_stop  = self._make_btn(btn_frame, "⏹  STOP",  C['yellow'],    self._stop)
-        self.btn_reset = self._make_btn(btn_frame, "↺  RESET", C['btn_reset'], self._reset)
+        self.btn_load  = self._make_btn(btn_row, '⬆  Load',  C['btn'],      self._load_machine)
+        self.btn_step  = self._make_btn(btn_row, '▶  Step',  C['btn_step'], self._step)
+        self.btn_undo  = self._make_btn(btn_row, '◀  Undo',  C['btn'],      self._undo)
+        tk.Frame(btn_row, bg=C['border'], width=1).pack(side='left', fill='y', padx=8, pady=4)
+        self.btn_run   = self._make_btn(btn_row, '⏩  Run',   C['btn_run'],  self._run)
+        self.btn_stop  = self._make_btn(btn_row, '⏹  Stop',  C['btn_stop'], self._stop)
+        self.btn_reset = self._make_btn(btn_row, '↺  Reset', C['btn_reset'],self._reset)
 
         for btn in (self.btn_load, self.btn_step, self.btn_undo,
-                    self.btn_run, self.btn_stop, self.btn_reset):
-            btn.pack(side='left', padx=3, pady=2)
+                    self.btn_run,  self.btn_stop,  self.btn_reset):
+            btn.pack(side='left', padx=3)
 
         self.btn_stop.config(state='disabled')
 
-        # Speed control — compact inline strip
-        spd_frame = tk.Frame(left, bg=C['bg'])
-        spd_frame.pack(fill='x')
-        tk.Label(spd_frame, text="Speed:", bg=C['bg'],
-                 fg=C['muted'], font=FONT_LABEL).pack(side='left', padx=4)
+        # Speed strip
+        spd_row = tk.Frame(ctrl, bg=C['bg'])
+        spd_row.pack(fill='x')
+        tk.Label(spd_row, text='Speed', bg=C['bg'],
+                 fg=C['muted'], font=FONT_LABEL).pack(side='left', padx=(0, 8))
         self.speed_var = tk.IntVar(value=400)
-        speed_scale = tk.Scale(spd_frame, from_=50, to=1000,
-                               orient='horizontal', variable=self.speed_var,
-                               bg=C['bg'], fg=C['text'], troughcolor=C['panel'],
-                               highlightthickness=0, length=160,
-                               command=self._on_speed_change,
-                               showvalue=True)
-        speed_scale.pack(side='left')
+        ttk.Scale(spd_row, from_=50, to=1000, orient='horizontal',
+                  variable=self.speed_var, style='Speed.TScale',
+                  length=160, command=self._on_speed_change).pack(side='left')
+        self.spd_lbl = tk.Label(spd_row, text='400 ms', bg=C['bg'],
+                                fg=C['muted'], font=FONT_LABEL, width=7)
+        self.spd_lbl.pack(side='left', padx=6)
 
-        # ── Right panel: Execution log ─────────────────────────────
-        tk.Label(right, text="EXECUTION LOG", bg=C['panel'],
-                 fg=C['accent'], font=FONT_LABEL).pack(padx=8, pady=(8, 2))
-        tk.Frame(right, bg=C['border'], height=1).pack(fill='x', padx=4)
+        # ── Right panel: Log ──────────────────────────────────────
+        log_hdr = tk.Frame(right, bg=C['panel'])
+        log_hdr.pack(fill='x')
+        tk.Label(log_hdr, text='LOG', bg=C['panel'],
+                 fg=C['accent'], font=('Segoe UI', 8, 'bold')).pack(
+                     side='left', padx=12, pady=8)
+        clr = tk.Label(log_hdr, text='clear', bg=C['panel'],
+                       fg=C['muted'], cursor='hand2', font=FONT_LABEL)
+        clr.pack(side='right', padx=12)
+        clr.bind('<Button-1>', lambda _e: self._log_clear())
+
+        tk.Frame(right, bg=C['border'], height=1).pack(fill='x')
 
         self.log_box = scrolledtext.ScrolledText(
-            right, width=26, height=30,
-            bg=C['panel'], fg=C['text'],
+            right, width=24, bg=C['panel'], fg=C['text'],
             insertbackground=C['text'],
-            relief='flat', font=('Courier New', 9),
-            state='disabled',
-            highlightthickness=0
+            relief='flat', font=('Consolas', 8),
+            state='disabled', highlightthickness=0,
+            padx=8, pady=6,
         )
-        self.log_box.pack(fill='both', expand=True, padx=4, pady=4)
+        self.log_box.pack(fill='both', expand=True)
 
-        # Tag colours in log
         self.log_box.tag_config('accept', foreground=C['green'])
         self.log_box.tag_config('reject', foreground=C['red'])
         self.log_box.tag_config('step',   foreground=C['accent'])
         self.log_box.tag_config('info',   foreground=C['muted'])
 
+    def _make_entry(self, parent, **kw):
+        """Return a styled tk.Entry."""
+        return tk.Entry(parent,
+                        bg=C['panel'], fg=C['text'],
+                        insertbackground=C['text'],
+                        relief='flat', font=FONT_MONO,
+                        highlightbackground=C['border_hi'],
+                        highlightthickness=1, **kw)
+
     def _make_btn(self, parent, text, color, command):
-        btn = tk.Button(parent, text=text, bg=color, fg='white',
-                        activebackground=C['btn_hover'], activeforeground='white',
-                        relief='flat', font=FONT_BTN, cursor='hand2',
-                        padx=10, pady=6, command=command, bd=0)
+        """Return a styled tk.Button with a subtle hover effect."""
+        btn = tk.Button(parent, text=text,
+                        bg=color, fg=C['text'],
+                        activebackground=_lighten(color),
+                        activeforeground=C['text'],
+                        relief='flat', font=FONT_BTN,
+                        cursor='hand2', padx=12, pady=7,
+                        command=command, bd=0)
+        hover = _lighten(color)
+        btn.bind('<Enter>', lambda _e, b=btn, h=hover:  b.config(bg=h))
+        btn.bind('<Leave>', lambda _e, b=btn, c=color:  b.config(bg=c))
         return btn
 
     # ── Example pre-load ──────────────────────────────────────────
@@ -651,7 +739,9 @@ q2,X -> X,R,q0
     # ── Event handlers ────────────────────────────────────────────
 
     def _on_speed_change(self, val):
-        self._speed_ms = int(val)
+        self._speed_ms = int(float(val))
+        if hasattr(self, 'spd_lbl'):
+            self.spd_lbl.config(text=f'{self._speed_ms} ms')
 
     def _load_machine(self):
         """Parse configuration fields and set up the TuringMachine object."""
