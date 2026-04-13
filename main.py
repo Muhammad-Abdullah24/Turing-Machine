@@ -387,14 +387,40 @@ class App(tk.Tk):
 
     # ── UI construction ───────────────────────────────────────────
 
+    def _build_menu(self):
+        """Create the top menu bar, housing File and View actions."""
+        menubar = tk.Menu(self, bg=C['panel'], fg=C['text'],
+                          activebackground=C['accent'], activeforeground='white',
+                          relief='flat', bd=0)
+
+        file_menu = tk.Menu(menubar, tearoff=0,
+                            bg=C['panel'], fg=C['text'],
+                            activebackground=C['accent'], activeforeground='white')
+        file_menu.add_command(label="Open Configuration…", command=self._load_config)
+        file_menu.add_command(label="Save Configuration…", command=self._save_config)
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit", command=self.quit)
+        menubar.add_cascade(label="File", menu=file_menu)
+
+        view_menu = tk.Menu(menubar, tearoff=0,
+                            bg=C['panel'], fg=C['text'],
+                            activebackground=C['accent'], activeforeground='white')
+        view_menu.add_command(label="Transition Table", command=self._show_transition_table)
+        menubar.add_cascade(label="View", menu=view_menu)
+
+        self.config(menu=menubar)
+
     def _build_ui(self):
+        # ── Menu bar ──────────────────────────────────────────────
+        self._build_menu()
+
         # ── Title bar ────────────────────────────────────────────
-        title_frame = tk.Frame(self, bg=C['bg'], pady=12)
+        title_frame = tk.Frame(self, bg=C['bg'], pady=10)
         title_frame.pack(fill='x')
         tk.Label(title_frame, text="◈  TURING MACHINE SIMULATOR",
                  bg=C['bg'], fg=C['accent'],
                  font=FONT_TITLE).pack()
-        tk.Label(title_frame, text="Deterministic • Single-Tape • Step-by-Step",
+        tk.Label(title_frame, text="Deterministic · Single-Tape · Step-by-Step",
                  bg=C['bg'], fg=C['muted'], font=FONT_LABEL).pack()
 
         # ── Separator ────────────────────────────────────────────
@@ -428,14 +454,9 @@ class App(tk.Tk):
         for col in range(4):
             status_frame.columnconfigure(col, weight=1)
 
-        tk.Label(status_frame, text="STATE", bg=C['panel'],
-                 fg=C['muted'], font=FONT_LABEL).grid(row=0, column=0, padx=8, pady=4)
-        tk.Label(status_frame, text="HEAD", bg=C['panel'],
-                 fg=C['muted'], font=FONT_LABEL).grid(row=0, column=1, padx=8, pady=4)
-        tk.Label(status_frame, text="SYMBOL", bg=C['panel'],
-                 fg=C['muted'], font=FONT_LABEL).grid(row=0, column=2, padx=8, pady=4)
-        tk.Label(status_frame, text="STEPS", bg=C['panel'],
-                 fg=C['muted'], font=FONT_LABEL).grid(row=0, column=3, padx=8, pady=4)
+        for col, label in enumerate(("STATE", "HEAD", "SYMBOL", "STEPS")):
+            tk.Label(status_frame, text=label, bg=C['panel'],
+                     fg=C['muted'], font=FONT_LABEL).grid(row=0, column=col, padx=8, pady=4)
 
         self.lbl_state  = tk.Label(status_frame, text="—", bg=C['panel'],
                                    fg=C['accent'], font=FONT_MONO_BIG)
@@ -457,7 +478,7 @@ class App(tk.Tk):
         self.result_banner.pack(fill='x', pady=(0, 8))
 
         # ── Configuration section ─────────────────────────────────
-        cfg_frame = tk.LabelFrame(left, text=" MACHINE CONFIGURATION ",
+        cfg_frame = tk.LabelFrame(left, text=" CONFIGURATION ",
                                   bg=C['bg'], fg=C['accent'],
                                   font=FONT_LABEL, bd=1,
                                   highlightbackground=C['border'])
@@ -468,10 +489,10 @@ class App(tk.Tk):
         row0.pack(fill='x', padx=8, pady=4)
 
         fields = [
-            ("States (comma-sep)", 'entry_states', 18),
-            ("Start State",        'entry_start',   8),
-            ("Accept States",      'entry_accept',  8),
-            ("Reject State",       'entry_reject',  8),
+            ("States", 'entry_states', 20),
+            ("Start",  'entry_start',   8),
+            ("Accept", 'entry_accept',  8),
+            ("Reject", 'entry_reject',  8),
         ]
         for label, attr, w in fields:
             col = tk.Frame(row0, bg=C['bg'])
@@ -488,16 +509,16 @@ class App(tk.Tk):
         # Row 1: Input string
         row1 = tk.Frame(cfg_frame, bg=C['bg'])
         row1.pack(fill='x', padx=8, pady=4)
-        tk.Label(row1, text="Input String:", bg=C['bg'], fg=C['muted'],
+        tk.Label(row1, text="Input:", bg=C['bg'], fg=C['muted'],
                  font=FONT_LABEL).pack(side='left', padx=4)
-        self.entry_input = tk.Entry(row1, width=30, bg=C['panel'],
+        self.entry_input = tk.Entry(row1, width=34, bg=C['panel'],
                                     fg=C['text'], insertbackground=C['text'],
                                     relief='flat', font=FONT_MONO,
                                     highlightbackground=C['border'], highlightthickness=1)
         self.entry_input.pack(side='left', padx=4)
 
         # ── Transition editor ─────────────────────────────────────
-        tr_frame = tk.LabelFrame(left, text=" TRANSITION RULES  (format: state,sym -> sym,Dir,state) ",
+        tr_frame = tk.LabelFrame(left, text=" TRANSITIONS  (state,sym → sym,Dir,state) ",
                                  bg=C['bg'], fg=C['accent'],
                                  font=FONT_LABEL, bd=1,
                                  highlightbackground=C['border'])
@@ -527,35 +548,35 @@ class App(tk.Tk):
         btn_frame = tk.Frame(left, bg=C['bg'])
         btn_frame.pack(fill='x', pady=(0, 4))
 
-        self.btn_load  = self._make_btn(btn_frame, "⬆  LOAD",   C['btn'],      self._load_machine)
-        self.btn_step  = self._make_btn(btn_frame, "▶  STEP",   C['btn_step'], self._step)
-        self.btn_undo  = self._make_btn(btn_frame, "◀  UNDO",   C['btn'],      self._undo)
-        self.btn_run   = self._make_btn(btn_frame, "⏩  RUN",    C['btn_run'],  self._run)
-        self.btn_stop  = self._make_btn(btn_frame, "⏹  STOP",   C['yellow'],   self._stop)
-        self.btn_reset = self._make_btn(btn_frame, "↺  RESET",  C['btn_reset'],self._reset)
-        self.btn_save  = self._make_btn(btn_frame, "💾  SAVE",   C['btn'],      self._save_config)
-        self.btn_open  = self._make_btn(btn_frame, "📂  OPEN",   C['btn'],      self._load_config)
-        self.btn_table = self._make_btn(btn_frame, "🔍  TABLE",  C['btn'],      self._show_transition_table)
+        self.btn_load  = self._make_btn(btn_frame, "⬆  LOAD",  C['btn'],       self._load_machine)
+        self.btn_step  = self._make_btn(btn_frame, "▶  STEP",  C['btn_step'],  self._step)
+        self.btn_undo  = self._make_btn(btn_frame, "◀  UNDO",  C['btn'],       self._undo)
 
-        for btn in (self.btn_load, self.btn_step, self.btn_undo, self.btn_run,
-                    self.btn_stop, self.btn_reset, self.btn_save, self.btn_open,
-                    self.btn_table):
-            btn.pack(side='left', padx=4, pady=2)
+        # Visual divider between configure/step group and run group
+        tk.Frame(btn_frame, bg=C['border'], width=1).pack(side='left', fill='y', padx=6, pady=4)
+
+        self.btn_run   = self._make_btn(btn_frame, "⏩  RUN",   C['btn_run'],   self._run)
+        self.btn_stop  = self._make_btn(btn_frame, "⏹  STOP",  C['yellow'],    self._stop)
+        self.btn_reset = self._make_btn(btn_frame, "↺  RESET", C['btn_reset'], self._reset)
+
+        for btn in (self.btn_load, self.btn_step, self.btn_undo,
+                    self.btn_run, self.btn_stop, self.btn_reset):
+            btn.pack(side='left', padx=3, pady=2)
 
         self.btn_stop.config(state='disabled')
 
-        # Speed control
+        # Speed control — compact inline strip
         spd_frame = tk.Frame(left, bg=C['bg'])
         spd_frame.pack(fill='x')
-        tk.Label(spd_frame, text="Run Speed:", bg=C['bg'],
+        tk.Label(spd_frame, text="Speed:", bg=C['bg'],
                  fg=C['muted'], font=FONT_LABEL).pack(side='left', padx=4)
         self.speed_var = tk.IntVar(value=400)
         speed_scale = tk.Scale(spd_frame, from_=50, to=1000,
                                orient='horizontal', variable=self.speed_var,
                                bg=C['bg'], fg=C['text'], troughcolor=C['panel'],
-                               highlightthickness=0, length=200,
+                               highlightthickness=0, length=160,
                                command=self._on_speed_change,
-                               label='ms/step')
+                               showvalue=True)
         speed_scale.pack(side='left')
 
         # ── Right panel: Execution log ─────────────────────────────
@@ -564,7 +585,7 @@ class App(tk.Tk):
         tk.Frame(right, bg=C['border'], height=1).pack(fill='x', padx=4)
 
         self.log_box = scrolledtext.ScrolledText(
-            right, width=28, height=30,
+            right, width=26, height=30,
             bg=C['panel'], fg=C['text'],
             insertbackground=C['text'],
             relief='flat', font=('Courier New', 9),
@@ -578,14 +599,6 @@ class App(tk.Tk):
         self.log_box.tag_config('reject', foreground=C['red'])
         self.log_box.tag_config('step',   foreground=C['accent'])
         self.log_box.tag_config('info',   foreground=C['muted'])
-
-        # Tape content readout at bottom of right panel
-        tk.Label(right, text="TAPE CONTENT", bg=C['panel'],
-                 fg=C['muted'], font=FONT_LABEL).pack(padx=8, pady=(4, 0))
-        self.lbl_tape_content = tk.Label(right, text="", bg=C['panel'],
-                                         fg=C['yellow'], font=FONT_MONO,
-                                         wraplength=220, justify='left')
-        self.lbl_tape_content.pack(padx=8, pady=(0, 8))
 
     def _make_btn(self, parent, text, color, command):
         btn = tk.Button(parent, text=text, bg=color, fg='white',
@@ -758,11 +771,10 @@ q2,X -> X,R,q0
         """Enable/disable buttons appropriately during auto-run."""
         idle_state  = 'normal' if not running else 'disabled'
         stop_state  = 'normal' if running     else 'disabled'
-        for btn in (self.btn_load, self.btn_step, self.btn_undo, self.btn_run,
-                    self.btn_reset, self.btn_save, self.btn_open):
+        for btn in (self.btn_load, self.btn_step, self.btn_undo,
+                    self.btn_run, self.btn_reset):
             btn.config(state=idle_state)
         self.btn_stop.config(state=stop_state)
-        # TABLE stays always enabled (read-only viewer)
 
     # ── UI update helpers ─────────────────────────────────────────
 
@@ -783,12 +795,6 @@ q2,X -> X,R,q0
         self.lbl_head  .config(text=str(head))
         self.lbl_symbol.config(text=symbol)
         self.lbl_steps .config(text=str(steps))
-
-        # Tape content readout
-        content = self.sim.tape.get_tape_content()
-        if len(content) > 30:
-            content = content[:30] + '…'
-        self.lbl_tape_content.config(text=content)
 
         # Colour the state label based on accept/reject
         if state in self.tm.accept_states:
