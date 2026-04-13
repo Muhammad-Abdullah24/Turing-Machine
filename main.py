@@ -1,5 +1,6 @@
+import json
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext
+from tkinter import filedialog, messagebox, scrolledtext
 import time
 import threading
 import re
@@ -96,11 +97,11 @@ class TuringMachine:
     def parse_transitions(self, text: str) -> list[str]:
         """
         Parse transition rules from human-readable text.
-        Supported formats:
+        Supported format:
             q0,0 -> 1,R,q1
-            q0,0->1,R,q1
-            q0 0 -> 1 R q1
+            q0,0->1,R,q1   (spaces around -> are optional)
         Returns a list of error messages (empty = success).
+        Duplicate (state, symbol) keys produce a warning but the last rule wins.
         """
         errors = []
         self.transitions.clear()
@@ -120,6 +121,11 @@ class TuringMachine:
                 continue
             state, sym, new_sym, direction, next_state = m.groups()
             direction = direction.upper()
+            key = (state, sym)
+            if key in self.transitions:
+                errors.append(
+                    f"Line {lineno}: Duplicate rule for ({state}, {sym}) — previous rule overwritten."
+                )
             self.add_transition(state, sym, new_sym, direction, next_state)
 
         return errors
@@ -205,7 +211,7 @@ class Simulator:
         if self.steps >= self.MAX_STEPS:
             self.halted = True
             self.accepted = False
-            return 'rejected'  # treated as reject after limit
+            return 'timeout'
 
         # Check halting in new state
         if self.current_state in self.tm.accept_states:
@@ -474,15 +480,19 @@ class App(tk.Tk):
         btn_frame = tk.Frame(left, bg=C['bg'])
         btn_frame.pack(fill='x', pady=(0, 4))
 
-        self.btn_load  = self._make_btn(btn_frame, "⬆  LOAD",  C['btn'],      self._load_machine)
-        self.btn_step  = self._make_btn(btn_frame, "▶  STEP",  C['btn_step'], self._step)
-        self.btn_run   = self._make_btn(btn_frame, "⏩  RUN",   C['btn_run'],  self._run)
-        self.btn_stop  = self._make_btn(btn_frame, "⏹  STOP",  C['yellow'],   self._stop)
-        self.btn_reset = self._make_btn(btn_frame, "↺  RESET", C['btn_reset'],self._reset)
+        self.btn_load  = self._make_btn(btn_frame, "⬆  LOAD",   C['btn'],      self._load_machine)
+        self.btn_step  = self._make_btn(btn_frame, "▶  STEP",   C['btn_step'], self._step)
+        self.btn_run   = self._make_btn(btn_frame, "⏩  RUN",    C['btn_run'],  self._run)
+        self.btn_stop  = self._make_btn(btn_frame, "⏹  STOP",   C['yellow'],   self._stop)
+        self.btn_reset = self._make_btn(btn_frame, "↺  RESET",  C['btn_reset'],self._reset)
+        self.btn_save  = self._make_btn(btn_frame, "💾  SAVE",   C['btn'],      self._save_config)
+        self.btn_open  = self._make_btn(btn_frame, "📂  OPEN",   C['btn'],      self._load_config)
 
         for btn in (self.btn_load, self.btn_step, self.btn_run,
-                    self.btn_stop, self.btn_reset):
+                    self.btn_stop, self.btn_reset, self.btn_save, self.btn_open):
             btn.pack(side='left', padx=4, pady=2)
+
+        self.btn_stop.config(state='disabled')
 
         # Speed control
         spd_frame = tk.Frame(left, bg=C['bg'])
@@ -632,6 +642,9 @@ q2,X -> X,R,q0
         self._refresh_ui()
 
     def _step(self):
+        if self._running:
+            messagebox.showwarning("Running", "Stop auto-run before stepping manually.")
+            return
         if self.sim.halted:
             messagebox.showinfo("Halted", "Machine has already halted. Press RESET to restart.")
             return
@@ -656,6 +669,7 @@ q2,X -> X,R,q0
             messagebox.showwarning("Not Loaded", "Please load a machine first.")
             return
 
+        self._set_run_mode(True)
         self._running = True
         self._run_thread = threading.Thread(target=self._run_loop, daemon=True)
         self._run_thread.start()
@@ -672,6 +686,7 @@ q2,X -> X,R,q0
                 break
             time.sleep(self._speed_ms / 1000.0)
         self._running = False
+        self.after(0, self._set_run_mode, False)
 
     def _stop(self):
         self._running = False
@@ -684,6 +699,15 @@ q2,X -> X,R,q0
         self._log_clear()
         self._log("Reset. Ready.", 'info')
         self._refresh_ui()
+
+    def _set_run_mode(self, running: bool):
+        """Enable/disable buttons appropriately during auto-run."""
+        idle_state  = 'normal' if not running else 'disabled'
+        stop_state  = 'normal' if running     else 'disabled'
+        for btn in (self.btn_load, self.btn_step, self.btn_run,
+                    self.btn_reset, self.btn_save, self.btn_open):
+            btn.config(state=idle_state)
+        self.btn_stop.config(state=stop_state)
 
     # ── UI update helpers ─────────────────────────────────────────
 
@@ -720,11 +744,15 @@ q2,X -> X,R,q0
             self.lbl_state.config(fg=C['accent'])
 
     def _show_result(self, status: str):
-        """Display the ACCEPTED / REJECTED banner."""
+        """Display the ACCEPTED / REJECTED / TIMEOUT banner."""
         if status == 'accepted':
             self.result_banner.config(
                 text=f"  ✔  ACCEPTED  after {self.sim.steps} steps  ",
                 bg=C['green'], fg='white')
+        elif status == 'timeout':
+            self.result_banner.config(
+                text=f"  ⚠  TIMEOUT  — exceeded {self.sim.MAX_STEPS} steps  ",
+                bg=C['yellow'], fg='white')
         elif status == 'no_rule':
             self.result_banner.config(
                 text=f"  ✘  REJECTED  (no rule) after {self.sim.steps} steps  ",
@@ -752,9 +780,66 @@ q2,X -> X,R,q0
         elif status == 'accepted':
             self._log(f"[{steps:>5}] ACCEPTED", 'accept')
             self._log(f"       Tape: {tape}", 'accept')
+        elif status == 'timeout':
+            self._log(f"[{steps:>5}] TIMEOUT (>{self.sim.MAX_STEPS} steps)", 'reject')
+            self._log(f"       Tape: {tape}", 'reject')
         else:
             self._log(f"[{steps:>5}] REJECTED ({status})", 'reject')
             self._log(f"       Tape: {tape}", 'reject')
+
+    def _save_config(self):
+        """Save current machine configuration to a JSON file."""
+        path = filedialog.asksaveasfilename(
+            defaultextension=".json",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+            title="Save Machine Configuration"
+        )
+        if not path:
+            return
+        config = {
+            "states":      self.entry_states.get().strip(),
+            "start_state": self.entry_start.get().strip(),
+            "accept_states": self.entry_accept.get().strip(),
+            "reject_state":  self.entry_reject.get().strip(),
+            "input_string":  self.entry_input.get().strip(),
+            "transitions":   self.txt_transitions.get('1.0', 'end').rstrip('\n'),
+        }
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=2)
+            self._log(f"Config saved to {path}", 'info')
+        except OSError as e:
+            messagebox.showerror("Save Error", str(e))
+
+    def _load_config(self):
+        """Load a machine configuration from a JSON file."""
+        path = filedialog.askopenfilename(
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+            title="Open Machine Configuration"
+        )
+        if not path:
+            return
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            messagebox.showerror("Load Error", str(e))
+            return
+
+        # Clear and populate all fields
+        for entry, key in (
+            (self.entry_states,  "states"),
+            (self.entry_start,   "start_state"),
+            (self.entry_accept,  "accept_states"),
+            (self.entry_reject,  "reject_state"),
+            (self.entry_input,   "input_string"),
+        ):
+            entry.delete(0, 'end')
+            entry.insert(0, config.get(key, ''))
+
+        self.txt_transitions.delete('1.0', 'end')
+        self.txt_transitions.insert('1.0', config.get('transitions', ''))
+        self._log(f"Config loaded from {path}", 'info')
 
     def _log_clear(self):
         self.log_box.config(state='normal')
