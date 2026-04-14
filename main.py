@@ -477,11 +477,11 @@ class App(tk.Tk):
         em = tk.Menu(bar, tearoff=0, bg=C['panel'], fg=C['text'],
                      activebackground=C['accent'], activeforeground=C['panel'])
         em.add_command(label='0ⁿ 1ⁿ  Acceptor  (0011)',
-                       command=lambda: self._example_0n1n())
+                       command=self._example_0n1n)
         em.add_command(label='Binary Increment  (0111)',
-                       command=lambda: self._example_binary_inc())
+                       command=self._example_binary_inc)
         em.add_command(label='Even-length Binary  (0110)',
-                       command=lambda: self._example_even_length())
+                       command=self._example_even_length)
         bar.add_cascade(label='Examples', menu=em)
 
         self.config(menu=bar)
@@ -1357,7 +1357,7 @@ if __name__ == '__main__':
     # Force the canvas to draw once the window is ready
     def _initial_render():
         half = TAPE_CELLS // 2
-        cells = [(i, '_') for i in range(-half, TAPE_CELLS - half)]
+        cells = [(i, '_') for i in range(-half, half + 1)]
         app.tape_canvas.render(cells, head_pos=0)
     app.after(100, _initial_render)
 
