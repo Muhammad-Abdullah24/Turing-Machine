@@ -425,11 +425,11 @@ class TapeCanvas(tk.Canvas):
 class App(tk.Tk):
     """Main application window."""
 
-    # Status chip presets  (label text, colour)
-    _S_READY   = ('●  READY',    '#908caa')
-    _S_RUNNING = ('⏵  RUNNING',  '#9ccfd8')
-    _S_ACCEPT  = ('✔  ACCEPTED', '#3a9d70')
-    _S_REJECT  = ('✘  REJECTED', '#eb6f92')
+    # Status chip presets  (label text, colour) — reference C palette
+    _S_READY   = ('●  READY',    C['muted'])
+    _S_RUNNING = ('⏵  RUNNING',  C['accent2'])
+    _S_ACCEPT  = ('✔  ACCEPTED', C['green'])
+    _S_REJECT  = ('✘  REJECTED', C['red'])
 
     def __init__(self):
         super().__init__()
@@ -513,8 +513,9 @@ class App(tk.Tk):
         chip_outer = tk.Frame(hdr, bg=C['panel2'],
                               highlightbackground=C['border'], highlightthickness=1)
         chip_outer.pack(side='right', pady=4)
-        self.status_chip = tk.Label(chip_outer, text='\u25cf  READY',
-                                    bg=C['panel2'], fg=C['muted'],
+        _lbl, _clr = self._S_READY
+        self.status_chip = tk.Label(chip_outer, text=_lbl,
+                                    bg=C['panel2'], fg=_clr,
                                     font=FONT_UI_BOLD, padx=14, pady=6)
         self.status_chip.pack()
 
