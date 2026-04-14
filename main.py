@@ -501,9 +501,7 @@ class App(tk.Tk):
         st.map('TM.TNotebook.Tab',
                background=[('selected', C['panel2']), ('active', C['btn_hover'])],
                foreground=[('selected', C['accent']),  ('active', C['text'])])
-        st.configure('TM.TScale',
-                     background=C['bg'], troughcolor=C['panel2'],
-                     sliderthickness=14, sliderlength=18)
+
 
         self._build_menu()
 
@@ -696,9 +694,12 @@ class App(tk.Tk):
         tk.Label(spd, text='Speed', bg=C['bg'],
                  fg=C['muted'], font=FONT_UI_SM).pack(side='left', padx=(2, 8))
         self.speed_var = tk.IntVar(value=400)
-        ttk.Scale(spd, from_=50, to=1000, orient='horizontal',
-                  variable=self.speed_var, style='TM.TScale',
-                  length=180, command=self._on_speed_change).pack(side='left')
+        tk.Scale(spd, from_=50, to=1000, orient='horizontal',
+                 variable=self.speed_var, length=180,
+                 bg=C['bg'], fg=C['muted'], troughcolor=C['panel2'],
+                 highlightthickness=0, sliderrelief='flat',
+                 sliderlength=18, width=10, showvalue=False,
+                 command=self._on_speed_change).pack(side='left')
         self.spd_lbl = tk.Label(spd, text='400 ms', bg=C['bg'],
                                 fg=C['muted'], font=FONT_UI_SM, width=8)
         self.spd_lbl.pack(side='left', padx=6)
