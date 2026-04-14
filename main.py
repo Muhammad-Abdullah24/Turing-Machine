@@ -273,7 +273,6 @@ class Simulator:
 
 
 # ─────────────────────────────────────────────────────────────────
-# ─────────────────────────────────────────────────────────────────
 #  FRONTEND: Tkinter GUI  —  Rose Pine colour scheme
 # ─────────────────────────────────────────────────────────────────
 
@@ -446,6 +445,7 @@ class App(tk.Tk):
         self._table_win: tk.Toplevel | None = None
 
         self._build_ui()
+        self._bind_keys()
         self._load_example()
         self._set_status(*self._S_READY)
 
@@ -473,6 +473,16 @@ class App(tk.Tk):
                      activebackground=C['accent'], activeforeground=C['panel'])
         vm.add_command(label='Transition Table', command=self._show_transition_table)
         bar.add_cascade(label='View', menu=vm)
+
+        em = tk.Menu(bar, tearoff=0, bg=C['panel'], fg=C['text'],
+                     activebackground=C['accent'], activeforeground=C['panel'])
+        em.add_command(label='0ⁿ 1ⁿ  Acceptor  (0011)',
+                       command=lambda: self._example_0n1n())
+        em.add_command(label='Binary Increment  (0111)',
+                       command=lambda: self._example_binary_inc())
+        em.add_command(label='Even-length Binary  (0110)',
+                       command=lambda: self._example_even_length())
+        bar.add_cascade(label='Examples', menu=em)
 
         self.config(menu=bar)
 
@@ -721,6 +731,10 @@ class App(tk.Tk):
         self.log_box.tag_config('step',   foreground=C['accent'])
         self.log_box.tag_config('info',   foreground=C['muted'])
 
+        # Status bar is packed to the bottom from within _build_ui so that
+        # the pack manager reserves its space before the content area expands.
+        self._build_status_bar()
+
     def _make_entry(self, parent, **kw):
         """Return a consistently styled tk.Entry."""
         return tk.Entry(parent,
@@ -744,6 +758,60 @@ class App(tk.Tk):
         btn.bind('<Enter>', lambda _e, b=btn, h=hover:  b.config(bg=h))
         btn.bind('<Leave>', lambda _e, b=btn, c=color:  b.config(bg=c))
         return btn
+
+    # ── Helper: clear and load an example ───────────────────────────
+
+    def _clear_and_load_example(self, states, start, accept, reject,
+                                 input_str, transitions):
+        """Clear all configuration fields then populate with the given example."""
+        for entry in (self.entry_states, self.entry_start, self.entry_accept,
+                      self.entry_reject, self.entry_input):
+            entry.delete(0, 'end')
+        self.txt_transitions.delete('1.0', 'end')
+        self.entry_states.insert(0, states)
+        self.entry_start .insert(0, start)
+        self.entry_accept.insert(0, accept)
+        self.entry_reject.insert(0, reject)
+        self.entry_input .insert(0, input_str)
+        self.txt_transitions.insert('1.0', transitions)
+        self._highlight_transitions()
+
+    # ── Keyboard shortcuts ──────────────────────────────────────────
+
+    def _bind_keys(self):
+        """Bind global keyboard shortcuts (safe keys that won't conflict with text editing)."""
+        self.bind('<F5>',        lambda _e: self._run())
+        self.bind('<F6>',        lambda _e: self._step())
+        self.bind('<Escape>',    lambda _e: self._stop())
+        self.bind('<Control-l>', lambda _e: self._load_machine())
+        self.bind('<Control-L>', lambda _e: self._load_machine())
+        self.bind('<Control-r>', lambda _e: self._reset())
+        self.bind('<Control-R>', lambda _e: self._reset())
+        self.bind('<F9>',        lambda _e: self._show_transition_table())
+        # <Return> in any config Entry field triggers Load
+        for w in (self.entry_states, self.entry_start, self.entry_accept,
+                  self.entry_reject, self.entry_input):
+            w.bind('<Return>', lambda _e: self._load_machine())
+
+    # ── Status bar ──────────────────────────────────────────────────────
+
+    def _build_status_bar(self):
+        """Build a thin keyboard-hint bar at the bottom of the window."""
+        bar = tk.Frame(self, bg=C['panel2'], padx=14, pady=5)
+        bar.pack(side='bottom', fill='x')
+        hints = [
+            ('F5',     'Run'),
+            ('F6',     'Step'),
+            ('Esc',    'Stop'),
+            ('Ctrl+L', 'Load'),
+            ('Ctrl+R', 'Reset'),
+            ('F9',     'Table'),
+        ]
+        for key, action in hints:
+            tk.Label(bar, text=key, bg=C['panel2'],
+                     fg=C['accent'], font=('Consolas', 8, 'bold')).pack(side='left')
+            tk.Label(bar, text=f' {action}', bg=C['panel2'],
+                     fg=C['muted'], font=('Segoe UI', 8)).pack(side='left', padx=(0, 16))
 
     # ── Example pre-load ──────────────────────────────────────────
 
@@ -778,13 +846,80 @@ q2,X -> X,R,q0
 # Anything unmatched falls through to reject implicitly
 """
 
-        self.entry_states.insert(0, example_states)
-        self.entry_start .insert(0, example_start)
-        self.entry_accept.insert(0, example_accept)
-        self.entry_reject.insert(0, example_reject)
-        self.entry_input .insert(0, example_input)
-        self.txt_transitions.insert('1.0', example_transitions)
-        self._highlight_transitions()
+        self._clear_and_load_example(
+            example_states, example_start, example_accept,
+            example_reject, example_input, example_transitions,
+        )
+
+    # ── Built-in examples ──────────────────────────────────────────
+
+    def _example_0n1n(self):
+        """0^n 1^n acceptor (the default demo)."""
+        self._clear_and_load_example(
+            states     = "q0,q1,q2,q3,q4,qaccept,qreject",
+            start      = "q0",
+            accept     = "qaccept",
+            reject     = "qreject",
+            input_str  = "0011",
+            transitions = (
+                "# Accepts strings of the form 0^n 1^n (n >= 1)\n"
+                "# q0: scan right looking for a 0\n"
+                "q0,0 -> X,R,q1\n"
+                "q0,Y -> Y,R,q0\n"
+                "q0,_ -> _,R,qaccept\n"
+                "# q1: move right past 0s and Ys to find a 1\n"
+                "q1,0 -> 0,R,q1\n"
+                "q1,Y -> Y,R,q1\n"
+                "q1,1 -> Y,L,q2\n"
+                "q1,_ -> _,R,qreject\n"
+                "# q2: move left back to the leftmost unmarked 0\n"
+                "q2,0 -> 0,L,q2\n"
+                "q2,Y -> Y,L,q2\n"
+                "q2,X -> X,R,q0\n"
+            ),
+        )
+
+    def _example_binary_inc(self):
+        """Binary increment: scan to rightmost bit, increment by 1."""
+        self._clear_and_load_example(
+            states     = "q0,q1,qacc",
+            start      = "q0",
+            accept     = "qacc",
+            reject     = "",
+            input_str  = "0111",
+            transitions = (
+                "# Increments a binary number written on the tape\n"
+                "# Input 0111 -> tape becomes 1000 then halts in qacc\n"
+                "# q0: scan right to the end\n"
+                "q0,0 -> 0,R,q0\n"
+                "q0,1 -> 1,R,q0\n"
+                "q0,_ -> _,L,q1\n"
+                "# q1: increment from the rightmost bit\n"
+                "q1,0 -> 1,R,qacc\n"
+                "q1,1 -> 0,L,q1\n"
+                "q1,_ -> 1,R,qacc\n"
+            ),
+        )
+
+    def _example_even_length(self):
+        """Accepts binary strings of even length."""
+        self._clear_and_load_example(
+            states     = "q_even,q_odd,qacc,qrej",
+            start      = "q_even",
+            accept     = "qacc",
+            reject     = "qrej",
+            input_str  = "0110",
+            transitions = (
+                "# Accepts binary strings whose length is even\n"
+                "# Input 0110 (length 4) -> accepted\n"
+                "q_even,0 -> 0,R,q_odd\n"
+                "q_even,1 -> 1,R,q_odd\n"
+                "q_even,_ -> _,R,qacc\n"
+                "q_odd,0  -> 0,R,q_even\n"
+                "q_odd,1  -> 1,R,q_even\n"
+                "q_odd,_  -> _,R,qrej\n"
+            ),
+        )
 
     # ── Event handlers ────────────────────────────────────────────
 
@@ -839,6 +974,7 @@ q2,X -> X,R,q0
         self.sim = Simulator(self.tm)
         self.sim.load(input_str)
 
+        self.title(f'Turing Machine Simulator — “{input_str}”')
         self._log_clear()
         self._log(f"Machine loaded. Input: '{input_str}'", 'info')
         self._log(f"Transitions: {len(self.tm.transitions)}", 'info')
@@ -919,6 +1055,8 @@ q2,X -> X,R,q0
         self.btn_stop.config(state=stop_state)
         if running:
             self._set_status(*self._S_RUNNING)
+        elif not self.sim.halted:
+            self._set_status(*self._S_READY)
 
     # ── UI update helpers ─────────────────────────────────────────
 
