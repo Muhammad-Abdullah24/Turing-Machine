@@ -90,7 +90,7 @@ class TuringMachine:
             key = (state, sym)
             if key in self.transitions:
                 errors.append(
-                    f'Line {lineno}: Duplicate rule for ({state}, {sym}) - overwritten.')
+                    f'Line {lineno}: Duplicate rule for ({state}, {sym}) - new rule overwrites previous.')
             self.add_transition(state, sym, new_sym, direction, next_state)
         return errors
 
@@ -253,13 +253,14 @@ FONT_BTN      = ('Segoe UI',  9, 'bold')
 FONT_HUD_VAL  = ('Segoe UI', 15, 'bold')
 FONT_HUD_LBL  = ('Segoe UI',  7, 'bold')
 
-TAPE_CELLS = 19
-CELL_W     = 50
-CELL_H     = 62
-CELL_R     = 10
+TAPE_CELLS         = 19
+CELL_W             = 50
+CELL_H             = 62
+CELL_R             = 10
+DEFAULT_CANVAS_W   = 900  # fallback canvas width before first Configure event
 
 
-def _rr(canvas, x1, y1, x2, y2, r=8, **kw):
+def _draw_rounded_rect(canvas, x1, y1, x2, y2, r=8, **kw):
     """Draw a smooth rounded-rectangle polygon on canvas."""
     fill    = kw.get('fill',    '')
     outline = kw.get('outline', fill)
@@ -276,10 +277,10 @@ def _rr(canvas, x1, y1, x2, y2, r=8, **kw):
                                  fill=fill, outline=outline, width=ow)
 
 
-def _lighten(hex_color: str, factor: float = 0.22) -> str:
-    r = int(hex_color[1:3], 16)
-    g = int(hex_color[3:5], 16)
-    b = int(hex_color[5:7], 16)
+def _lighten(color: str, factor: float = 0.22) -> str:
+    r = int(color[1:3], 16)
+    g = int(color[3:5], 16)
+    b = int(color[5:7], 16)
     r = min(255, int(r + (255 - r) * factor))
     g = min(255, int(g + (255 - g) * factor))
     b = min(255, int(b + (255 - b) * factor))
@@ -309,7 +310,7 @@ class TapeCanvas(tk.Canvas):
 
     def _draw(self):
         self.delete('all')
-        w = self.winfo_width() or 900
+        w = self.winfo_width() or DEFAULT_CANVAS_W
         n = len(self.cell_data)
         if not n:
             return
@@ -324,7 +325,7 @@ class TapeCanvas(tk.Canvas):
                        and pos == self.changed_pos and not is_head)
 
             if is_head:
-                _rr(self, x - 5, y0 - 5, x + CELL_W + 3, y0 + CELL_H + 5,
+                _draw_rounded_rect(self, x - 5, y0 - 5, x + CELL_W + 3, y0 + CELL_H + 5,
                     r=CELL_R + 5, fill=C['tape_glow'], outline='')
                 fill, sym_col, ol, ow = C['tape_head'], '#ffffff', '#d8caff', 2
             elif is_chg:
@@ -332,7 +333,7 @@ class TapeCanvas(tk.Canvas):
             else:
                 fill, sym_col, ol, ow = C['tape_cell'], C['tape_text'], C['border'], 1
 
-            _rr(self, x + 2, y0, x + CELL_W - 2, y0 + CELL_H,
+            _draw_rounded_rect(self, x + 2, y0, x + CELL_W - 2, y0 + CELL_H,
                 r=CELL_R, fill=fill, outline=ol, width=ow)
             self.create_text(cx, y0 + CELL_H // 2,
                              text=sym, fill=sym_col, font=FONT_MONO_BIG)
